@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Button } from "@/components/ui/button";
-import { MapPin, Navigation } from "lucide-react";
+import { MapPin, Navigation, MapPinned } from "lucide-react";
 import { Location } from "@/pages/BookingPage";
 import { toast } from "sonner";
 
@@ -15,7 +15,7 @@ L.Icon.Default.mergeOptions({
 });
 
 interface MapViewProps {
-  onComplete: (start: Location, destination: Location) => void;
+  onComplete: (start: Location, destination: Location, stops: Location[]) => void;
 }
 
 const MapView = ({ onComplete }: MapViewProps) => {
@@ -23,10 +23,38 @@ const MapView = ({ onComplete }: MapViewProps) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const [startPoint, setStartPoint] = useState<Location | null>(null);
   const [destination, setDestination] = useState<Location | null>(null);
+  const [stops, setStops] = useState<Location[]>([]);
   const startMarkerRef = useRef<L.Marker | null>(null);
   const destMarkerRef = useRef<L.Marker | null>(null);
+  const stopMarkersRef = useRef<L.Marker[]>([]);
   const routeLineRef = useRef<L.Polyline | null>(null);
 
+  const drawRoute = () => {
+    if (routeLineRef.current) {
+      routeLineRef.current.remove();
+    }
+
+    if (!startPoint) return;
+
+    const waypoints: L.LatLngExpression[] = [L.latLng(startPoint.lat, startPoint.lng)];
+    stops.forEach(stop => waypoints.push(L.latLng(stop.lat, stop.lng)));
+    if (destination) {
+      waypoints.push(L.latLng(destination.lat, destination.lng));
+    }
+
+    if (waypoints.length < 2) return;
+
+    routeLineRef.current = L.polyline(waypoints, {
+      color: "#0ea5e9",
+      weight: 3,
+      opacity: 0.7,
+      dashArray: "10, 10",
+    }).addTo(mapRef.current!);
+
+    const bounds = L.latLngBounds(waypoints);
+    mapRef.current!.fitBounds(bounds, { padding: [50, 50] });
+  };
+  
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
 
@@ -100,32 +128,31 @@ const MapView = ({ onComplete }: MapViewProps) => {
           .bindPopup("Drop-off Location")
           .openPopup();
 
-        // Draw route line
-        if (routeLineRef.current) {
-          routeLineRef.current.remove();
-        }
-
-        routeLineRef.current = L.polyline(
-          [
-            [startPoint.lat, startPoint.lng],
-            [lat, lng],
-          ],
-          {
-            color: "#0ea5e9",
-            weight: 3,
-            opacity: 0.7,
-            dashArray: "10, 10",
-          }
-        ).addTo(map);
-
-        // Fit bounds to show both markers
-        const bounds = L.latLngBounds(
-          [startPoint.lat, startPoint.lng],
-          [lat, lng]
-        );
-        map.fitBounds(bounds, { padding: [50, 50] });
-
-        toast.success("Route planned! Select your taxi tier");
+        drawRoute();
+        toast.success("Route planned! Tap on the map to add stops or click continue");
+      } else {
+        // Add a stop
+        const newStop: Location = { lat, lng };
+        const updatedStops = [...stops, newStop];
+        setStops(updatedStops);
+    
+        const orangeIcon = L.icon({
+            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-orange.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34],
+            shadowSize: [41, 41]
+        });
+    
+        const stopMarker = L.marker([lat, lng], { icon: orangeIcon })
+            .addTo(map)
+            .bindPopup(`Stop ${updatedStops.length}`)
+            .openPopup();
+    
+        stopMarkersRef.current.push(stopMarker);
+        drawRoute();
+        toast.success(`Stop ${updatedStops.length} added!`);
       }
     });
 
@@ -139,17 +166,20 @@ const MapView = ({ onComplete }: MapViewProps) => {
   const handleReset = () => {
     setStartPoint(null);
     setDestination(null);
+    setStops([]);
 
     if (startMarkerRef.current) startMarkerRef.current.remove();
     if (destMarkerRef.current) destMarkerRef.current.remove();
     if (routeLineRef.current) routeLineRef.current.remove();
+    stopMarkersRef.current.forEach(marker => marker.remove());
+    stopMarkersRef.current = [];
 
     toast.info("Map reset. Select a new pickup location");
   };
 
   const handleContinue = () => {
     if (startPoint && destination) {
-      onComplete(startPoint, destination);
+      onComplete(startPoint, destination, stops);
     }
   };
 
@@ -158,7 +188,7 @@ const MapView = ({ onComplete }: MapViewProps) => {
       <div className="bg-card rounded-xl p-6 shadow-lg border border-border/50">
         <h2 className="text-2xl font-bold mb-2 text-foreground">Select Your Journey</h2>
         <p className="text-muted-foreground mb-4">
-          Tap on the map to set your pickup location, then tap again for your destination
+          Tap on the map to set your pickup location, then for your destination. Tap again to add stops.
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -185,6 +215,18 @@ const MapView = ({ onComplete }: MapViewProps) => {
               </p>
             </div>
           </div>
+        </div>
+
+        <div className="flex items-center gap-3 p-3 bg-primary/5 rounded-lg border border-primary/20 mb-4">
+            <div className="h-10 w-10 rounded-full bg-orange-500/20 flex items-center justify-center">
+                <MapPinned className="h-5 w-5 text-orange-600" />
+            </div>
+            <div>
+                <p className="text-xs text-muted-foreground">Stops</p>
+                <p className="font-medium text-sm">
+                    {stops.length > 0 ? `${stops.length} stop${stops.length > 1 ? 's' : ''} added` : "None"}
+                </p>
+            </div>
         </div>
 
         <div

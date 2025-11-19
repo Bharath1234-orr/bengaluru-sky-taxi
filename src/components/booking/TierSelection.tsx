@@ -7,6 +7,7 @@ import { Location, TaxiTier } from "@/pages/BookingPage";
 interface TierSelectionProps {
   start: Location;
   destination: Location;
+  stops: Location[];
   distance: number;
   onSelect: (tier: TaxiTier, distance: number, fare: number) => void;
   onBack: () => void;
@@ -36,7 +37,7 @@ const tiers: TaxiTier[] = [
   },
 ];
 
-const TierSelection = ({ start, destination, distance, onSelect, onBack }: TierSelectionProps) => {
+const TierSelection = ({ start, destination, stops, distance, onSelect, onBack }: TierSelectionProps) => {
   const [selectedTier, setSelectedTier] = useState<TaxiTier | null>(null);
   const baseRate = 50; // ₹50 per km
 

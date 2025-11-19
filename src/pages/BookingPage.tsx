@@ -6,6 +6,7 @@ import BookingStatus from "@/components/booking/BookingStatus";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Plane } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import StopsList from "@/components/booking/StopsList";
 
 export interface Location {
   lat: number;
@@ -25,6 +26,7 @@ export interface BookingData {
   id: string;
   start: Location;
   destination: Location;
+  stops: Location[];
   tier: TaxiTier;
   distance: number;
   fare: number;
@@ -37,12 +39,14 @@ const BookingPage = () => {
   const [step, setStep] = useState<"map" | "tier" | "confirm" | "status">("map");
   const [startPoint, setStartPoint] = useState<Location | null>(null);
   const [destination, setDestination] = useState<Location | null>(null);
+  const [stops, setStops] = useState<Location[]>([]);
   const [selectedTier, setSelectedTier] = useState<TaxiTier | null>(null);
   const [bookingData, setBookingData] = useState<BookingData | null>(null);
 
-  const handleMapComplete = (start: Location, dest: Location) => {
+  const handleMapComplete = (start: Location, dest: Location, stops: Location[]) => {
     setStartPoint(start);
     setDestination(dest);
+    setStops(stops);
     setStep("tier");
   };
 
@@ -53,7 +57,7 @@ const BookingPage = () => {
 
   const handleConfirmBooking = () => {
     if (startPoint && destination && selectedTier) {
-      const distance = calculateDistance(startPoint, destination);
+      const distance = calculateDistance(startPoint, destination, stops);
       const fare = calculateFare(distance, selectedTier.multiplier);
       const eta = Math.floor(Math.random() * 10) + 5; // 5-15 mins
       const travelTime = Math.floor(distance / 3); // Approx 3km/min flight speed
@@ -62,6 +66,7 @@ const BookingPage = () => {
         id: `FT${Date.now().toString().slice(-8)}`,
         start: startPoint,
         destination: destination,
+        stops: stops,
         tier: selectedTier,
         distance,
         fare,
@@ -74,14 +79,28 @@ const BookingPage = () => {
     }
   };
 
-  const calculateDistance = (start: Location, end: Location): number => {
-    const R = 6371; // Earth's radius in km
-    const dLat = ((end.lat - start.lat) * Math.PI) / 180;
-    const dLng = ((end.lng - start.lng) * Math.PI) / 180;
+  const calculateDistance = (start: Location, end: Location, stops: Location[]): number => {
+    let totalDistance = 0;
+    let currentPoint = start;
+
+    for (const stop of stops) {
+      totalDistance += calculateSegmentDistance(currentPoint, stop);
+      currentPoint = stop;
+    }
+
+    totalDistance += calculateSegmentDistance(currentPoint, end);
+
+    return totalDistance;
+  };
+
+  const calculateSegmentDistance = (point1: Location, point2: Location): number => {
+    const R = 6371; // Earth\'s radius in km
+    const dLat = ((point2.lat - point1.lat) * Math.PI) / 180;
+    const dLng = ((point2.lng - point1.lng) * Math.PI) / 180;
     const a =
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos((start.lat * Math.PI) / 180) *
-        Math.cos((end.lat * Math.PI) / 180) *
+      Math.cos((point1.lat * Math.PI) / 180) *
+        Math.cos((point2.lat * Math.PI) / 180) *
         Math.sin(dLng / 2) *
         Math.sin(dLng / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
@@ -103,6 +122,7 @@ const BookingPage = () => {
     setStep("map");
     setStartPoint(null);
     setDestination(null);
+    setStops([]);
     setSelectedTier(null);
     setBookingData(null);
   };
@@ -145,7 +165,8 @@ const BookingPage = () => {
           <TierSelection
             start={startPoint}
             destination={destination}
-            distance={calculateDistance(startPoint, destination)}
+            stops={stops}
+            distance={calculateDistance(startPoint, destination, stops)}
             onSelect={handleTierSelect}
             onBack={() => setStep("map")}
           />
@@ -155,9 +176,10 @@ const BookingPage = () => {
           <BookingConfirmation
             start={startPoint}
             destination={destination}
+            stops={stops}
             tier={selectedTier}
-            distance={calculateDistance(startPoint, destination)}
-            fare={calculateFare(calculateDistance(startPoint, destination), selectedTier.multiplier)}
+            distance={calculateDistance(startPoint, destination, stops)}
+            fare={calculateFare(calculateDistance(startPoint, destination, stops), selectedTier.multiplier)}
             onConfirm={handleConfirmBooking}
             onBack={() => setStep("tier")}
           />
